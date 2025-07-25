@@ -423,6 +423,165 @@ describe('ScoreEntryModal', () => {
     });
   });
 
+  describe('Edit Mode Functionality', () => {
+    const editingRound = {
+      id: 'round-1',
+      scores: [
+        { playerId: '1', score: 15, isRummy: false },
+        { playerId: '2', score: 0, isRummy: true },
+        { playerId: '3', score: 25, isRummy: false },
+      ],
+    };
+
+    const editProps = {
+      ...defaultProps,
+      editingRound,
+    };
+
+    it('displays edit mode title when editing a round', () => {
+      const { getByText } = render(<ScoreEntryModal {...editProps} />);
+
+      expect(getByText('Edit Round 3')).toBeTruthy();
+      expect(getByText('Modify scores for each player')).toBeTruthy();
+    });
+
+    it('pre-populates scores when editing a round', () => {
+      const { getAllByPlaceholderText } = render(<ScoreEntryModal {...editProps} />);
+
+      const scoreInputs = getAllByPlaceholderText('0');
+      expect(scoreInputs[0].props.value).toBe('15');
+      expect(scoreInputs[1].props.value).toBe('0');
+      expect(scoreInputs[2].props.value).toBe('25');
+    });
+
+    it('pre-populates rummy status when editing a round', () => {
+      const { getAllByPlaceholderText } = render(<ScoreEntryModal {...editProps} />);
+
+      const scoreInputs = getAllByPlaceholderText('0');
+      // Second player should be marked as rummy (input disabled)
+      expect(scoreInputs[1].props.editable).toBe(false);
+    });
+
+    it('displays "Update Scores" button text in edit mode', () => {
+      const { getByText } = render(<ScoreEntryModal {...editProps} />);
+
+      expect(getByText('Update Scores')).toBeTruthy();
+    });
+
+    it('submits updated scores when in edit mode', async () => {
+      const { getAllByPlaceholderText, getByText } = render(<ScoreEntryModal {...editProps} />);
+
+      // Modify the first player's score
+      const scoreInputs = getAllByPlaceholderText('0');
+      fireEvent.changeText(scoreInputs[0], '20');
+
+      fireEvent.press(getByText('Update Scores'));
+
+      await waitFor(() => {
+        expect(mockOnSubmit).toHaveBeenCalledWith([
+          { playerId: '1', score: 20, isRummy: false },
+          { playerId: '2', score: 0, isRummy: true },
+          { playerId: '3', score: 25, isRummy: false },
+        ]);
+      });
+    });
+
+    it('allows toggling rummy status when editing', async () => {
+      const { getAllByText, getAllByPlaceholderText, getByText } = render(
+        <ScoreEntryModal {...editProps} />
+      );
+
+      // Toggle rummy off for second player
+      const rummyButtons = getAllByText('RUMMY');
+      fireEvent.press(rummyButtons[1]); // Second player was rummy
+
+      // Enter a score for the second player
+      const scoreInputs = getAllByPlaceholderText('0');
+      fireEvent.changeText(scoreInputs[1], '10');
+
+      fireEvent.press(getByText('Update Scores'));
+
+      await waitFor(() => {
+        expect(mockOnSubmit).toHaveBeenCalledWith([
+          { playerId: '1', score: 15, isRummy: false },
+          { playerId: '2', score: 10, isRummy: false },
+          { playerId: '3', score: 25, isRummy: false },
+        ]);
+      });
+    });
+
+    it('resets to edit data when modal reopens in edit mode', () => {
+      const { rerender, getAllByPlaceholderText } = render(
+        <ScoreEntryModal {...editProps} visible={false} />
+      );
+
+      // Show modal in edit mode
+      rerender(<ScoreEntryModal {...editProps} visible={true} />);
+
+      const scoreInputs = getAllByPlaceholderText('0');
+      expect(scoreInputs[0].props.value).toBe('15');
+      expect(scoreInputs[1].props.editable).toBe(false); // Rummy player
+      expect(scoreInputs[2].props.value).toBe('25');
+    });
+
+    it('switches between new round and edit mode correctly', () => {
+      const { rerender, getByText, getAllByPlaceholderText } = render(
+        <ScoreEntryModal {...defaultProps} />
+      );
+
+      // Initially in new round mode
+      expect(getByText('Round 3 Scores')).toBeTruthy();
+      expect(getByText('Add Scores')).toBeTruthy();
+
+      // Switch to edit mode
+      rerender(<ScoreEntryModal {...editProps} />);
+
+      expect(getByText('Edit Round 3')).toBeTruthy();
+      expect(getByText('Update Scores')).toBeTruthy();
+
+      // Verify scores are pre-populated
+      const scoreInputs = getAllByPlaceholderText('0');
+      expect(scoreInputs[0].props.value).toBe('15');
+    });
+
+    it('handles editing with all players marked as rummy', async () => {
+      const allRummyEditingRound = {
+        id: 'round-1',
+        scores: [
+          { playerId: '1', score: 0, isRummy: true },
+          { playerId: '2', score: 0, isRummy: true },
+          { playerId: '3', score: 0, isRummy: true },
+        ],
+      };
+
+      const allRummyProps = {
+        ...defaultProps,
+        editingRound: allRummyEditingRound,
+      };
+
+      const { getAllByPlaceholderText, getByText } = render(
+        <ScoreEntryModal {...allRummyProps} />
+      );
+
+      // All inputs should be disabled and show 0
+      const scoreInputs = getAllByPlaceholderText('0');
+      scoreInputs.forEach(input => {
+        expect(input.props.editable).toBe(false);
+        expect(input.props.value).toBe('0');
+      });
+
+      fireEvent.press(getByText('Update Scores'));
+
+      await waitFor(() => {
+        expect(mockOnSubmit).toHaveBeenCalledWith([
+          { playerId: '1', score: 0, isRummy: true },
+          { playerId: '2', score: 0, isRummy: true },
+          { playerId: '3', score: 0, isRummy: true },
+        ]);
+      });
+    });
+  });
+
   describe('Accessibility', () => {
     it('has proper keyboard type for score inputs', () => {
       const { getAllByPlaceholderText } = render(<ScoreEntryModal {...defaultProps} />);

@@ -11,20 +11,39 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withDelay,
+} from 'react-native-reanimated';
 
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
+import { FadeInView, SlideInView } from '@/components/ThemedAnimatedView';
 import { useGame } from '@/src/context/GameContext';
+import { useHaptics } from '@/src/services/HapticService';
 import { validatePlayerNames, validateTargetScore } from '@/src/models/validation';
 
 export default function GameSetupScreen() {
   const { createGame, recentPlayers, loading } = useGame();
+  const { gameCreation, errorAction } = useHaptics();
   const [players, setPlayers] = useState<string[]>(['', '']);
   const [targetScore, setTargetScore] = useState<string>('');
   const [activeInputIndex, setActiveInputIndex] = useState<number | null>(null);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const inputRefs = useRef<(TextInput | null)[]>([]);
+
+  // Animation values
+  const screenOpacity = useSharedValue(0);
+  const screenTranslateY = useSharedValue(30);
+
+  // Screen entrance animation
+  useEffect(() => {
+    screenOpacity.value = withSpring(1, { damping: 15, stiffness: 150 });
+    screenTranslateY.value = withSpring(0, { damping: 15, stiffness: 150 });
+  }, []);
 
   // Update suggestions based on active input
   useEffect(() => {
@@ -108,7 +127,7 @@ export default function GameSetupScreen() {
     }, 150);
   };
 
-  const validateAndStartGame = () => {
+  const validateAndStartGame = async () => {
     const newErrors: { [key: string]: string } = {};
     
     // Get non-empty players
@@ -158,8 +177,9 @@ export default function GameSetupScreen() {
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
       
-      // Show alert for the first error
+      // Show alert for the first error with haptic feedback
       const firstError = Object.values(newErrors)[0];
+      errorAction();
       Alert.alert('Validation Error', firstError);
       return;
     }
@@ -169,25 +189,39 @@ export default function GameSetupScreen() {
 
     // Create game and navigate
     try {
+      await gameCreation();
       createGame(trimmedPlayers, parsedTargetScore);
       router.replace('/game-play');
     } catch (error) {
+      await errorAction();
       Alert.alert('Error', error instanceof Error ? error.message : 'Failed to create game');
     }
   };
+
+  // Screen animation styles
+  const screenAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: screenOpacity.value,
+    transform: [{ translateY: screenTranslateY.value }],
+  }));
 
   return (
     <ThemedView style={styles.container}>
       <StatusBar style="auto" />
       
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        <View style={styles.section}>
+      <Animated.View style={[{ flex: 1 }, screenAnimatedStyle]}>
+        <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+        <FadeInView delay={200} style={styles.section}>
           <ThemedText type="subtitle" style={styles.sectionTitle}>
             Players ({players.length}/6)
           </ThemedText>
           
           {players.map((player, index) => (
-            <View key={index} style={styles.playerInputContainer}>
+            <SlideInView 
+              key={index} 
+              delay={300 + index * 100}
+              direction="left"
+              style={styles.playerInputContainer}
+            >
               <View style={styles.inputWrapper}>
                 <TextInput
                   ref={(ref) => (inputRefs.current[index] = ref)}
@@ -227,7 +261,7 @@ export default function GameSetupScreen() {
                   <ThemedText style={styles.removeButtonText}>×</ThemedText>
                 </TouchableOpacity>
               )}
-            </View>
+            </SlideInView>
           ))}
 
           {suggestions.length > 0 && activeInputIndex !== null && (
@@ -268,9 +302,9 @@ export default function GameSetupScreen() {
               <ThemedText style={styles.addPlayerText}>+ Add Player</ThemedText>
             </TouchableOpacity>
           )}
-        </View>
+        </FadeInView>
 
-        <View style={styles.section}>
+        <FadeInView delay={500} style={styles.section}>
           <ThemedText type="subtitle" style={styles.sectionTitle}>
             Target Score (Optional)
           </ThemedText>
@@ -303,8 +337,9 @@ export default function GameSetupScreen() {
           <ThemedText style={styles.helperText}>
             Leave empty for open-ended game
           </ThemedText>
-        </View>
-      </ScrollView>
+        </FadeInView>
+        </ScrollView>
+      </Animated.View>
 
       <View style={styles.footer}>
         <TouchableOpacity

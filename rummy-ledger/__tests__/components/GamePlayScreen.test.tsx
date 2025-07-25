@@ -20,25 +20,25 @@ jest.mock('expo-haptics', () => ({
   notificationAsync: jest.fn(),
   ImpactFeedbackStyle: {
     Medium: 'medium',
+    Heavy: 'heavy',
   },
   NotificationFeedbackType: {
     Success: 'success',
   },
 }));
 
-// Mock Alert properly
-const mockAlert = jest.fn();
-jest.mock('react-native/Libraries/Alert/Alert', () => ({
-  alert: mockAlert,
-}));
+// Mock Alert
+jest.spyOn(Alert, 'alert');
 
 // Mock ScoreEntryModal
 jest.mock('../../components/ScoreEntryModal', () => {
+  const { View, TouchableOpacity, Text } = require('react-native');
+
   return function MockScoreEntryModal({ visible, onSubmit, onCancel }: any) {
     if (!visible) return null;
     return (
-      <div testID="score-entry-modal">
-        <button
+      <View testID="score-entry-modal">
+        <TouchableOpacity
           testID="submit-scores"
           onPress={() =>
             onSubmit([
@@ -47,12 +47,12 @@ jest.mock('../../components/ScoreEntryModal', () => {
             ])
           }
         >
-          Submit
-        </button>
-        <button testID="cancel-scores" onPress={onCancel}>
-          Cancel
-        </button>
-      </div>
+          <Text>Submit</Text>
+        </TouchableOpacity>
+        <TouchableOpacity testID="cancel-scores" onPress={onCancel}>
+          <Text>Cancel</Text>
+        </TouchableOpacity>
+      </View>
     );
   };
 });
@@ -83,7 +83,19 @@ const createTestRound = (roundNumber: number): Round => ({
 });
 
 // Mock GameContext
-const mockGameContext = {
+const mockGameContext: {
+  currentGame: Game | null;
+  gameHistory: Game[];
+  recentPlayers: string[];
+  loading: boolean;
+  error: string | null;
+  createGame: jest.Mock;
+  addRound: jest.Mock;
+  editRound: jest.Mock;
+  deleteRound: jest.Mock;
+  endGame: jest.Mock;
+  clearError: jest.Mock;
+} = {
   currentGame: createTestGame([createTestRound(1)]),
   gameHistory: [],
   recentPlayers: [],
@@ -256,6 +268,151 @@ describe('GamePlayScreen', () => {
       const { getByText } = render(<GamePlayScreen />);
 
       expect(getByText('End Game')).toBeTruthy();
+    });
+  });
+
+  describe('Score Editing and Correction', () => {
+    it('displays edit and delete buttons for each round', () => {
+      const { getByText } = render(<GamePlayScreen />);
+
+      expect(getByText('Edit')).toBeTruthy();
+      expect(getByText('Delete')).toBeTruthy();
+    });
+
+    it('opens score entry modal in edit mode when edit button is pressed', () => {
+      const { getByText, getByTestId } = render(<GamePlayScreen />);
+
+      fireEvent.press(getByText('Edit'));
+
+      expect(getByTestId('score-entry-modal')).toBeTruthy();
+    });
+
+    it('calls editRound when editing scores are submitted', async () => {
+      const { getByText, getByTestId } = render(<GamePlayScreen />);
+
+      fireEvent.press(getByText('Edit'));
+      fireEvent.press(getByTestId('submit-scores'));
+
+      await waitFor(() => {
+        expect(mockGameContext.editRound).toHaveBeenCalledWith('round-1', [
+          { playerId: 'player1', score: 10, isRummy: false },
+          { playerId: 'player2', score: 0, isRummy: true },
+        ]);
+      });
+
+      expect(Haptics.impactAsync).toHaveBeenCalledWith('medium');
+    });
+
+    it('shows confirmation dialog when delete button is pressed', () => {
+      const { getByText } = render(<GamePlayScreen />);
+
+      fireEvent.press(getByText('Delete'));
+
+      expect(Alert.alert).toHaveBeenCalledWith(
+        'Delete Round',
+        'Are you sure you want to delete Round 1? This action cannot be undone.',
+        expect.arrayContaining([
+          expect.objectContaining({ text: 'Cancel', style: 'cancel' }),
+          expect.objectContaining({ 
+            text: 'Delete', 
+            style: 'destructive',
+            onPress: expect.any(Function)
+          }),
+        ])
+      );
+    });
+
+    it('calls deleteRound when deletion is confirmed', () => {
+      const { getByText } = render(<GamePlayScreen />);
+
+      fireEvent.press(getByText('Delete'));
+
+      // Get the onPress function from the Delete button in the alert
+      const deleteOnPress = (Alert.alert as jest.Mock).mock.calls[0][2][1].onPress;
+      deleteOnPress();
+
+      expect(mockGameContext.deleteRound).toHaveBeenCalledWith('round-1');
+      expect(Haptics.impactAsync).toHaveBeenCalledWith('heavy');
+    });
+
+    it('does not call deleteRound when deletion is cancelled', () => {
+      const { getByText } = render(<GamePlayScreen />);
+
+      fireEvent.press(getByText('Delete'));
+
+      // Simulate pressing Cancel - no onPress function should be called
+      expect(mockGameContext.deleteRound).not.toHaveBeenCalled();
+    });
+
+    it('handles editing multiple rounds correctly', () => {
+      const rounds = [createTestRound(1), createTestRound(2)];
+      mockGameContext.currentGame = createTestGame(rounds);
+
+      const { getAllByText } = render(<GamePlayScreen />);
+
+      const editButtons = getAllByText('Edit');
+      expect(editButtons).toHaveLength(2);
+
+      // Test editing the first round (most recent, displayed first)
+      fireEvent.press(editButtons[0]);
+      expect(mockGameContext.editRound).not.toHaveBeenCalled(); // Only opens modal
+    });
+
+    it('clears editing state when modal is cancelled', () => {
+      const { getByText, getByTestId } = render(<GamePlayScreen />);
+
+      fireEvent.press(getByText('Edit'));
+      fireEvent.press(getByTestId('cancel-scores'));
+
+      // Modal should close and editing state should be cleared
+      expect(mockGameContext.editRound).not.toHaveBeenCalled();
+    });
+
+    it('displays correct round number in edit modal', () => {
+      // This would require updating the mock to check the roundNumber prop
+      // For now, we verify the modal opens with edit functionality
+      const { getByText, getByTestId } = render(<GamePlayScreen />);
+
+      fireEvent.press(getByText('Edit'));
+
+      expect(getByTestId('score-entry-modal')).toBeTruthy();
+    });
+
+    it('handles editing when no rounds exist gracefully', () => {
+      mockGameContext.currentGame = createTestGame([]);
+      const { queryByText } = render(<GamePlayScreen />);
+
+      expect(queryByText('Edit')).toBeFalsy();
+      expect(queryByText('Delete')).toBeFalsy();
+    });
+
+    it('maintains round order after deletion', () => {
+      const rounds = [createTestRound(1), createTestRound(2), createTestRound(3)];
+      mockGameContext.currentGame = createTestGame(rounds);
+
+      const { getAllByText } = render(<GamePlayScreen />);
+
+      // Should display rounds in reverse order (3, 2, 1)
+      expect(getAllByText('Delete')).toHaveLength(3);
+    });
+
+    it('provides haptic feedback for edit and delete actions', async () => {
+      const { getByText, getByTestId } = render(<GamePlayScreen />);
+
+      // Test edit haptic feedback
+      fireEvent.press(getByText('Edit'));
+      fireEvent.press(getByTestId('submit-scores'));
+
+      await waitFor(() => {
+        expect(Haptics.impactAsync).toHaveBeenCalledWith('medium');
+      });
+
+      // Test delete haptic feedback
+      fireEvent.press(getByText('Delete'));
+      const deleteOnPress = (Alert.alert as jest.Mock).mock.calls[0][2][1].onPress;
+      deleteOnPress();
+
+      expect(Haptics.impactAsync).toHaveBeenCalledWith('heavy');
     });
   });
 

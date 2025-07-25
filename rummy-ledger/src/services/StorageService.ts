@@ -8,6 +8,7 @@ const STORAGE_KEYS = {
   GAME_HISTORY: '@RummyLedger:gameHistory',
   RECENT_PLAYERS: '@RummyLedger:recentPlayers',
   SETTINGS: '@RummyLedger:settings',
+  APP_STATE: '@RummyLedger:appState',
 } as const;
 
 // Error types for better error handling
@@ -389,6 +390,48 @@ export class StorageService {
         typeof score.isRummy === 'boolean'
       )
     );
+  }
+
+  /**
+   * Save generic data to storage
+   */
+  async saveData(key: string, data: any): Promise<void> {
+    try {
+      const jsonData = JSON.stringify(data);
+      await AsyncStorage.setItem(key, jsonData);
+    } catch (error) {
+      throw new StorageError(
+        `Failed to save data for key: ${key}`,
+        'saveData',
+        error instanceof Error ? error : new Error(String(error))
+      );
+    }
+  }
+
+  /**
+   * Load generic data from storage
+   */
+  async loadData(key: string): Promise<any> {
+    try {
+      const data = await AsyncStorage.getItem(key);
+      if (!data) {
+        return null;
+      }
+      return JSON.parse(data);
+    } catch (error) {
+      throw new StorageError(
+        `Failed to load data for key: ${key}`,
+        'loadData',
+        error instanceof Error ? error : new Error(String(error))
+      );
+    }
+  }
+
+  /**
+   * Save current game (alias for compatibility)
+   */
+  async saveCurrentGame(game: Game): Promise<void> {
+    return this.saveGame(game);
   }
 }
 

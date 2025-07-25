@@ -1,0 +1,139 @@
+name: Continuous Integration
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test:
+    name: Test Suite
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+        cache-dependency-path: rummy-ledger/package-lock.json
+        
+    - name: Install dependencies
+      working-directory: ./rummy-ledger
+      run: npm ci
+      
+    - name: Run linting
+      working-directory: ./rummy-ledger
+      run: npm run lint
+      
+    - name: Run comprehensive test suite
+      working-directory: ./rummy-ledger
+      run: npm run test:comprehensive
+      
+    - name: Upload coverage reports
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./rummy-ledger/coverage/lcov.info
+        directory: ./rummy-ledger/coverage
+        flags: unittests
+        name: rummy-ledger-coverage
+        fail_ci_if_error: true
+        
+    - name: Upload test results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: test-results-${{ matrix.node-version }}
+        path: |
+          rummy-ledger/coverage/
+          rummy-ledger/test-reports/
+          
+  accessibility:
+    name: Accessibility Tests
+    runs-on: ubuntu-latest
+    needs: test
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.x'
+        cache: 'npm'
+        cache-dependency-path: rummy-ledger/package-lock.json
+        
+    - name: Install dependencies
+      working-directory: ./rummy-ledger
+      run: npm ci
+      
+    - name: Run accessibility tests
+      working-directory: ./rummy-ledger
+      run: npm run test:accessibility
+      
+    - name: Run performance tests
+      working-directory: ./rummy-ledger
+      run: npm run test:performance
+      
+  e2e:
+    name: End-to-End Tests
+    runs-on: ubuntu-latest
+    needs: test
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.x'
+        cache: 'npm'
+        cache-dependency-path: rummy-ledger/package-lock.json
+        
+    - name: Install dependencies
+      working-directory: ./rummy-ledger
+      run: npm ci
+      
+    - name: Run E2E tests
+      working-directory: ./rummy-ledger
+      run: npm run test:e2e
+      
+  build:
+    name: Build Verification
+    runs-on: ubuntu-latest
+    needs: [test, accessibility, e2e]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.x'
+        cache: 'npm'
+        cache-dependency-path: rummy-ledger/package-lock.json
+        
+    - name: Install dependencies
+      working-directory: ./rummy-ledger
+      run: npm ci
+      
+    - name: Build project
+      working-directory: ./rummy-ledger
+      run: npx expo export --platform web
+      
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: build-output
+        path: rummy-ledger/dist/

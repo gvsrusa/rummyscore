@@ -1,11 +1,29 @@
 import { StyleSheet, Text, type TextProps } from 'react-native';
-
-import { useThemeColor } from '@/hooks/useThemeColor';
+import { useTheme } from '@/src/context/ThemeContext';
 
 export type ThemedTextProps = TextProps & {
   lightColor?: string;
   darkColor?: string;
-  type?: 'default' | 'title' | 'defaultSemiBold' | 'subtitle' | 'link';
+  type?: 
+    | 'default' 
+    | 'h1' 
+    | 'h2' 
+    | 'h3' 
+    | 'body' 
+    | 'bodyLarge' 
+    | 'bodySmall'
+    | 'scoreDisplay'
+    | 'scoreMedium'
+    | 'scoreSmall'
+    | 'playerName'
+    | 'playerNameSmall'
+    | 'button'
+    | 'buttonLarge'
+    | 'label'
+    | 'caption'
+    | 'link';
+  color?: keyof ReturnType<typeof useTheme>['colors'];
+  responsive?: boolean;
 };
 
 export function ThemedText({
@@ -13,48 +31,48 @@ export function ThemedText({
   lightColor,
   darkColor,
   type = 'default',
+  color: colorKey,
+  responsive = true,
   ...rest
 }: ThemedTextProps) {
-  const color = useThemeColor({ light: lightColor, dark: darkColor }, 'text');
+  const { colors, theme } = useTheme();
+  
+  // Determine text color
+  let textColor = colors.text;
+  if (lightColor || darkColor) {
+    textColor = theme.colorScheme === 'light' ? (lightColor || colors.text) : (darkColor || colors.text);
+  } else if (colorKey && colors[colorKey]) {
+    textColor = colors[colorKey] as string;
+  }
+
+  // Get typography style
+  const getTypographyStyle = () => {
+    const baseStyle = type === 'default' ? theme.typography.styles.body : theme.typography.styles[type as keyof typeof theme.typography.styles];
+    
+    if (!baseStyle) return theme.typography.styles.body;
+    
+    if (responsive) {
+      return {
+        ...baseStyle,
+        fontSize: theme.responsive.getFontSize(baseStyle.fontSize),
+      };
+    }
+    
+    return baseStyle;
+  };
+
+  const typographyStyle = getTypographyStyle();
 
   return (
     <Text
       style={[
-        { color },
-        type === 'default' ? styles.default : undefined,
-        type === 'title' ? styles.title : undefined,
-        type === 'defaultSemiBold' ? styles.defaultSemiBold : undefined,
-        type === 'subtitle' ? styles.subtitle : undefined,
-        type === 'link' ? styles.link : undefined,
+        {
+          color: textColor,
+          ...typographyStyle,
+        },
         style,
       ]}
       {...rest}
     />
   );
 }
-
-const styles = StyleSheet.create({
-  default: {
-    fontSize: 16,
-    lineHeight: 24,
-  },
-  defaultSemiBold: {
-    fontSize: 16,
-    lineHeight: 24,
-    fontWeight: '600',
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    lineHeight: 32,
-  },
-  subtitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  link: {
-    lineHeight: 30,
-    fontSize: 16,
-    color: '#0a7ea4',
-  },
-});

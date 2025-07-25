@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet,
   View,
@@ -10,10 +10,23 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import * as Haptics from 'expo-haptics';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withTiming,
+  withSequence,
+} from 'react-native-reanimated';
 
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
+import { ThemedButton } from '@/components/ThemedButton';
+import { AccessibleTextInput } from '@/components/AccessibleTextInput';
+import { KeyboardNavigationView } from '@/components/KeyboardNavigationView';
+import { FadeInView, ScaleInView } from '@/components/ThemedAnimatedView';
+import { useHaptics } from '@/src/services/HapticService';
+import { useTheme } from '@/src/context/ThemeContext';
+import { useAccessibility } from '@/src/services/AccessibilityService';
 import { Player, PlayerScore } from '@/src/types';
 
 interface ScoreEntryModalProps {
@@ -22,6 +35,11 @@ interface ScoreEntryModalProps {
   roundNumber: number;
   onSubmit: (scores: PlayerScore[]) => void;
   onCancel: () => void;
+  loading?: boolean;
+  editingRound?: {
+    id: string;
+    scores: PlayerScore[];
+  };
 }
 
 export default function ScoreEntryModal({
@@ -30,21 +48,92 @@ export default function ScoreEntryModal({
   roundNumber,
   onSubmit,
   onCancel,
+  loading = false,
+  editingRound,
 }: ScoreEntryModalProps) {
   const [scores, setScores] = useState<{ [playerId: string]: string }>({});
   const [rummyPlayers, setRummyPlayers] = useState<Set<string>>(new Set());
+  
+  const { colors, theme } = useTheme();
+  const { scoreEntry, rummyToggle, roundComplete, errorAction } = useHaptics();
+  const { 
+    announceScoreUpdate, 
+    announceGameState,
+    getScoreLabel,
+    getInteractionHint,
+    shouldReduceAnimations,
+    getAnimationDuration,
+    isScreenReaderEnabled 
+  } = useAccessibility();
+  
+  // Refs for managing focus
+  const inputRefs = useRef<{ [playerId: string]: React.RefObject<any> }>({});
+  const modalRef = useRef<View>(null);
+  
+  // Animation values for each player row
+  const playerAnimations = players.reduce((acc, player) => {
+    acc[player.id] = {
+      scale: useSharedValue(1),
+      rummyScale: useSharedValue(1),
+    };
+    return acc;
+  }, {} as Record<string, { scale: Animated.SharedValue<number>; rummyScale: Animated.SharedValue<number> }>);
 
-  // Reset state when modal opens
+  // Initialize input refs
+  useEffect(() => {
+    players.forEach(player => {
+      if (!inputRefs.current[player.id]) {
+        inputRefs.current[player.id] = React.createRef();
+      }
+    });
+  }, [players]);
+
+  // Reset state when modal opens or populate with editing data
   useEffect(() => {
     if (visible) {
-      setScores({});
-      setRummyPlayers(new Set());
-    }
-  }, [visible]);
+      if (editingRound) {
+        // Populate with existing round data
+        const initialScores: { [playerId: string]: string } = {};
+        const initialRummyPlayers = new Set<string>();
+        
+        editingRound.scores.forEach(score => {
+          if (score.isRummy) {
+            initialRummyPlayers.add(score.playerId);
+          } else {
+            initialScores[score.playerId] = score.score.toString();
+          }
+        });
+        
+        setScores(initialScores);
+        setRummyPlayers(initialRummyPlayers);
+      } else {
+        // Reset for new round
+        setScores({});
+        setRummyPlayers(new Set());
+      }
 
-  const updateScore = (playerId: string, score: string) => {
+      // Announce modal opening to screen reader
+      if (isScreenReaderEnabled) {
+        const message = editingRound 
+          ? `Editing round ${roundNumber} scores`
+          : `Entering scores for round ${roundNumber}`;
+        announceGameState(message);
+      }
+    }
+  }, [visible, editingRound, roundNumber, isScreenReaderEnabled, announceGameState]);
+
+  const updateScore = async (playerId: string, score: string) => {
     // Only allow numeric input
     const numericScore = score.replace(/[^0-9]/g, '');
+    
+    // Animate score input (respect reduced motion)
+    if (playerAnimations[playerId] && !shouldReduceAnimations()) {
+      const duration = getAnimationDuration(300);
+      playerAnimations[playerId].scale.value = withSequence(
+        withSpring(1.05, { damping: 15, stiffness: 300 }),
+        withSpring(1, { damping: 15, stiffness: 300 })
+      );
+    }
     
     // Remove from rummy if manually entering score
     if (numericScore && rummyPlayers.has(playerId)) {
@@ -57,13 +146,35 @@ export default function ScoreEntryModal({
       ...prev,
       [playerId]: numericScore,
     }));
+    
+    // Haptic feedback for score entry
+    if (numericScore) {
+      await scoreEntry();
+    }
+
+    // Announce score update to screen reader
+    if (numericScore && isScreenReaderEnabled) {
+      const player = players.find(p => p.id === playerId);
+      if (player) {
+        await announceScoreUpdate(player.name, parseInt(numericScore));
+      }
+    }
   };
 
-  const toggleRummy = (playerId: string) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  const toggleRummy = async (playerId: string) => {
+    // Animate rummy button (respect reduced motion)
+    if (playerAnimations[playerId] && !shouldReduceAnimations()) {
+      const duration = getAnimationDuration(400);
+      playerAnimations[playerId].rummyScale.value = withSequence(
+        withSpring(1.2, { damping: 10, stiffness: 400 }),
+        withSpring(1, { damping: 15, stiffness: 300 })
+      );
+    }
     
     const newRummyPlayers = new Set(rummyPlayers);
-    if (newRummyPlayers.has(playerId)) {
+    const isRummy = newRummyPlayers.has(playerId);
+    
+    if (isRummy) {
       newRummyPlayers.delete(playerId);
     } else {
       newRummyPlayers.add(playerId);
@@ -74,9 +185,23 @@ export default function ScoreEntryModal({
       }));
     }
     setRummyPlayers(newRummyPlayers);
+    
+    // Haptic feedback for rummy toggle
+    await rummyToggle();
+
+    // Announce rummy toggle to screen reader
+    if (isScreenReaderEnabled) {
+      const player = players.find(p => p.id === playerId);
+      if (player) {
+        const message = isRummy 
+          ? `${player.name} rummy removed`
+          : `${player.name} marked as rummy`;
+        await announceScoreUpdate(player.name, 0, !isRummy);
+      }
+    }
   };
 
-  const validateAndSubmit = () => {
+  const validateAndSubmit = async () => {
     const playerScores: PlayerScore[] = [];
     const missingScores: string[] = [];
 
@@ -98,6 +223,7 @@ export default function ScoreEntryModal({
       } else {
         const score = parseInt(scoreText);
         if (isNaN(score) || score < 0) {
+          await errorAction();
           Alert.alert('Error', `Invalid score for ${player.name}. Please enter a non-negative number.`);
           return;
         }
@@ -110,6 +236,7 @@ export default function ScoreEntryModal({
     }
 
     if (missingScores.length > 0) {
+      await errorAction();
       Alert.alert(
         'Missing Scores',
         `Please enter scores for: ${missingScores.join(', ')}`
@@ -118,7 +245,7 @@ export default function ScoreEntryModal({
     }
 
     // Submit scores with haptic feedback
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    await roundComplete();
     onSubmit(playerScores);
   };
 
@@ -143,12 +270,20 @@ export default function ScoreEntryModal({
       animationType="slide"
       presentationStyle="pageSheet"
       onRequestClose={handleCancel}
+      accessibilityViewIsModal={true}
     >
       <KeyboardAvoidingView
         style={styles.container}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        <ThemedView style={styles.modalContent}>
+        <KeyboardNavigationView
+          ref={modalRef}
+          style={styles.modalContent}
+          autoFocus={true}
+          accessibilityRole="dialog"
+          accessibilityLabel={editingRound ? `Edit round ${roundNumber} scores` : `Round ${roundNumber} score entry`}
+        >
+          <ThemedView style={styles.modalContent}>
           {/* Header */}
           <View style={styles.header}>
             <TouchableOpacity
@@ -159,11 +294,11 @@ export default function ScoreEntryModal({
             </TouchableOpacity>
             
             <View style={styles.headerCenter}>
-              <ThemedText type="subtitle" style={styles.title}>
-                Round {roundNumber} Scores
+              <ThemedText type="h3" style={styles.title}>
+                {editingRound ? `Edit Round ${roundNumber}` : `Round ${roundNumber} Scores`}
               </ThemedText>
               <ThemedText style={styles.subtitle}>
-                Enter scores for each player
+                {editingRound ? 'Modify scores for each player' : 'Enter scores for each player'}
               </ThemedText>
             </View>
             
@@ -178,82 +313,120 @@ export default function ScoreEntryModal({
           {/* Players List */}
           <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
             <View style={styles.playersContainer}>
-              {players.map((player) => {
+              {players.map((player, index) => {
                 const isRummy = rummyPlayers.has(player.id);
                 const scoreValue = scores[player.id] || '';
+                
+                // Animated styles for this player
+                const playerScale = playerAnimations[player.id]?.scale;
+                const rummyScale = playerAnimations[player.id]?.rummyScale;
+                
+                const playerAnimatedStyle = useAnimatedStyle(() => ({
+                  transform: [{ scale: playerScale?.value || 1 }],
+                }));
+                
+                const rummyAnimatedStyle = useAnimatedStyle(() => ({
+                  transform: [{ scale: rummyScale?.value || 1 }],
+                }));
 
                 return (
-                  <View key={player.id} style={styles.playerContainer}>
+                  <ScaleInView
+                    key={player.id}
+                    delay={index * 100}
+                    style={styles.playerContainer}
+                  >
                     <View style={styles.playerHeader}>
-                      <ThemedText style={styles.playerName}>
+                      <ThemedText type="playerNameSmall" style={styles.playerName}>
                         {player.name}
                       </ThemedText>
-                      <ThemedText style={styles.currentTotal}>
+                      <ThemedText type="caption" style={styles.currentTotal}>
                         Current: {player.totalScore}
                       </ThemedText>
                     </View>
 
                     <View style={styles.scoreInputContainer}>
-                      <TextInput
-                        style={[
-                          styles.scoreInput,
-                          isRummy && styles.scoreInputDisabled,
-                        ]}
-                        placeholder="0"
-                        placeholderTextColor="#9CA3AF"
-                        value={isRummy ? '0' : scoreValue}
-                        onChangeText={(text) => updateScore(player.id, text)}
-                        keyboardType="numeric"
-                        maxLength={3}
-                        editable={!isRummy}
-                        selectTextOnFocus
-                      />
-                      
-                      <TouchableOpacity
-                        style={[
-                          styles.rummyButton,
-                          isRummy && styles.rummyButtonActive,
-                        ]}
-                        onPress={() => toggleRummy(player.id)}
-                        activeOpacity={0.7}
-                      >
-                        <ThemedText
-                          style={[
-                            styles.rummyButtonText,
-                            isRummy && styles.rummyButtonTextActive,
+                      <Animated.View style={[{ flex: 1 }, shouldReduceAnimations() ? {} : playerAnimatedStyle]}>
+                        <AccessibleTextInput
+                          ref={inputRefs.current[player.id]}
+                          containerStyle={{ flex: 1 }}
+                          inputStyle={[
+                            styles.scoreInput,
+                            isRummy && styles.scoreInputDisabled,
+                            { color: colors.text, borderColor: colors.border },
                           ]}
+                          placeholder="0"
+                          placeholderTextColor={colors.textTertiary}
+                          value={isRummy ? '0' : scoreValue}
+                          onChangeText={(text) => updateScore(player.id, text)}
+                          keyboardType="numeric"
+                          maxLength={3}
+                          editable={!isRummy}
+                          selectTextOnFocus
+                          variant="score"
+                          size="large"
+                          accessibilityLabel={`Score input for ${player.name}`}
+                          accessibilityHint={isRummy ? 'Rummy selected, score is 0' : getInteractionHint('score-input')}
+                        />
+                      </Animated.View>
+                      
+                      <Animated.View style={shouldReduceAnimations() ? {} : rummyAnimatedStyle}>
+                        <TouchableOpacity
+                          style={[
+                            styles.rummyButton,
+                            isRummy && styles.rummyButtonActive,
+                            {
+                              borderColor: colors.success,
+                              backgroundColor: isRummy ? colors.success : 'transparent',
+                            },
+                          ]}
+                          onPress={() => toggleRummy(player.id)}
+                          activeOpacity={0.7}
+                          accessibilityRole="button"
+                          accessibilityLabel={`${isRummy ? 'Remove' : 'Mark'} rummy for ${player.name}`}
+                          accessibilityHint={getInteractionHint('rummy-toggle')}
+                          accessibilityState={{ selected: isRummy }}
                         >
-                          RUMMY
-                        </ThemedText>
-                      </TouchableOpacity>
+                          <ThemedText
+                            type="label"
+                            style={[
+                              styles.rummyButtonText,
+                              {
+                                color: isRummy ? colors.textInverse : colors.success,
+                              },
+                            ]}
+                            accessibilityElementsHidden={true}
+                          >
+                            RUMMY
+                          </ThemedText>
+                        </TouchableOpacity>
+                      </Animated.View>
                     </View>
-                  </View>
+                  </ScaleInView>
                 );
               })}
             </View>
           </ScrollView>
 
           {/* Footer Buttons */}
-          <View style={styles.footer}>
-            <TouchableOpacity
-              style={styles.cancelButton}
+          <FadeInView delay={300} style={styles.footer}>
+            <ThemedButton
+              title="Cancel"
+              variant="outline"
               onPress={handleCancel}
-              activeOpacity={0.7}
-            >
-              <ThemedText style={styles.cancelButtonText}>Cancel</ThemedText>
-            </TouchableOpacity>
+              style={{ flex: 1 }}
+            />
             
-            <TouchableOpacity
-              style={styles.submitButton}
+            <ThemedButton
+              title={editingRound ? 'Update Scores' : 'Add Scores'}
+              variant="primary"
               onPress={validateAndSubmit}
-              activeOpacity={0.7}
-            >
-              <ThemedText style={styles.submitButtonText}>
-                Add Scores
-              </ThemedText>
-            </TouchableOpacity>
-          </View>
-        </ThemedView>
+              loading={loading}
+              disabled={loading}
+              style={{ flex: 2 }}
+            />
+          </FadeInView>
+          </ThemedView>
+        </KeyboardNavigationView>
       </KeyboardAvoidingView>
     </Modal>
   );

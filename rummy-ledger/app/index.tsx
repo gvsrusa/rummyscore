@@ -1,16 +1,44 @@
-import React from 'react';
-import { StyleSheet, TouchableOpacity, View, ActivityIndicator, Alert } from 'react-native';
+import React, { useEffect } from 'react';
+import { StyleSheet, View, ActivityIndicator, Alert } from 'react-native';
 import { router } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withDelay,
+} from 'react-native-reanimated';
 
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
+import { ThemedSafeAreaView } from '@/components/ThemedSafeAreaView';
+import { ThemedButton } from '@/components/ThemedButton';
+import { ResponsiveContainer } from '@/components/ResponsiveContainer';
+import { FadeInView, SlideInView } from '@/components/ThemedAnimatedView';
 import { useGame } from '@/src/context/GameContext';
+import { useTheme } from '@/src/context/ThemeContext';
+import { useHaptics } from '@/src/services/HapticService';
 
 export default function HomeScreen() {
   const { gameHistory, currentGame, loading, error, clearError } = useGame();
+  const { colors, theme } = useTheme();
+  const { gameCreation } = useHaptics();
 
-  const handleCreateNewGame = () => {
+  // Animation values
+  const headerOpacity = useSharedValue(0);
+  const headerTranslateY = useSharedValue(-30);
+  const buttonsOpacity = useSharedValue(0);
+  const buttonsTranslateY = useSharedValue(50);
+
+  // Screen entrance animation
+  useEffect(() => {
+    headerOpacity.value = withDelay(100, withSpring(1, { damping: 15, stiffness: 150 }));
+    headerTranslateY.value = withDelay(100, withSpring(0, { damping: 15, stiffness: 150 }));
+    buttonsOpacity.value = withDelay(300, withSpring(1, { damping: 15, stiffness: 150 }));
+    buttonsTranslateY.value = withDelay(300, withSpring(0, { damping: 15, stiffness: 150 }));
+  }, []);
+
+  const handleCreateNewGame = async () => {
+    await gameCreation();
     router.push('/game-setup');
   };
 
@@ -42,199 +70,172 @@ export default function HomeScreen() {
     }
   }, [error, clearError]);
 
+  const styles = createStyles(colors, theme);
+
+  // Animated styles
+  const headerAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: headerOpacity.value,
+    transform: [{ translateY: headerTranslateY.value }],
+  }));
+
+  const buttonsAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: buttonsOpacity.value,
+    transform: [{ translateY: buttonsTranslateY.value }],
+  }));
+
   return (
-    <ThemedView style={styles.container}>
-      <StatusBar style="auto" />
-      
-      <View style={styles.header}>
-        <ThemedText type="title" style={styles.title}>
-          Rummy Ledger
-        </ThemedText>
-        <ThemedText style={styles.subtitle}>
-          Digital scorekeeping for your Rummy games
-        </ThemedText>
-      </View>
+    <ThemedSafeAreaView style={styles.container}>
+      <ResponsiveContainer maxWidth="lg" padding="lg">
+        <Animated.View style={[styles.header, headerAnimatedStyle]}>
+          <ThemedText type="h1" style={styles.title}>
+            Rummy Ledger
+          </ThemedText>
+          <ThemedText type="bodyLarge" color="textSecondary" style={styles.subtitle}>
+            Digital scorekeeping for your Rummy games
+          </ThemedText>
+        </Animated.View>
 
-      <View style={styles.mainActions}>
-        <TouchableOpacity 
-          style={[styles.button, styles.primaryButton, loading && styles.disabledButton]} 
-          onPress={handleCreateNewGame}
-          disabled={loading}
-        >
-          {loading ? (
-            <ActivityIndicator color="white" size="small" />
-          ) : (
-            <ThemedText style={styles.primaryButtonText}>
-              Create New Game
-            </ThemedText>
+        <Animated.View style={[styles.mainActions, buttonsAnimatedStyle]}>
+          <ThemedButton
+            title="Create New Game"
+            variant="primary"
+            size="large"
+            fullWidth
+            onPress={handleCreateNewGame}
+            loading={loading}
+            accessibilityLabel="Create a new Rummy game"
+          />
+
+          {currentGame && (
+            <ThemedButton
+              title="Resume Current Game"
+              variant="secondary"
+              size="large"
+              fullWidth
+              onPress={handleResumeGame}
+              disabled={loading}
+              accessibilityLabel="Resume the current game in progress"
+            />
           )}
-        </TouchableOpacity>
 
-        {currentGame && (
-          <TouchableOpacity 
-            style={[styles.button, styles.secondaryButton, loading && styles.disabledButton]} 
-            onPress={handleResumeGame}
+          <ThemedButton
+            title="Game History"
+            variant="outline"
+            size="large"
+            fullWidth
+            onPress={handleViewHistory}
             disabled={loading}
-          >
-            <ThemedText style={[styles.secondaryButtonText, loading && styles.disabledText]}>
-              Resume Current Game
+            accessibilityLabel="View previous game history"
+          />
+        </Animated.View>
+
+        {loading && gameHistory.length === 0 ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <ThemedText type="bodyLarge" color="textSecondary" style={styles.loadingText}>
+              Loading your games...
             </ThemedText>
-          </TouchableOpacity>
-        )}
-
-        <TouchableOpacity 
-          style={[styles.button, styles.secondaryButton, loading && styles.disabledButton]} 
-          onPress={handleViewHistory}
-          disabled={loading}
-        >
-          <ThemedText style={[styles.secondaryButtonText, loading && styles.disabledText]}>
-            Game History
-          </ThemedText>
-        </TouchableOpacity>
-      </View>
-
-      {loading && gameHistory.length === 0 ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#1E3A8A" />
-          <ThemedText style={styles.loadingText}>Loading your games...</ThemedText>
-        </View>
-      ) : recentGames.length > 0 ? (
-        <View style={styles.recentGames}>
-          <ThemedText type="subtitle" style={styles.sectionTitle}>
-            Recent Games
-          </ThemedText>
-          {recentGames.map((game) => (
-            <View key={game.id} style={styles.gameItem}>
-              <ThemedText style={styles.gameDate}>
-                {new Date(game.createdAt).toLocaleDateString()}
-              </ThemedText>
-              <ThemedText style={styles.gamePlayers}>
-                {game.players.map(p => p.name).join(', ')}
-              </ThemedText>
-              {game.winner && (
-                <ThemedText style={styles.gameWinner}>
-                  Winner: {game.winner}
+          </View>
+        ) : recentGames.length > 0 ? (
+          <FadeInView delay={500} style={styles.recentGames}>
+            <ThemedText type="h3" style={styles.sectionTitle}>
+              Recent Games
+            </ThemedText>
+            {recentGames.map((game, index) => (
+              <SlideInView
+                key={game.id}
+                delay={600 + index * 100}
+                direction="up"
+              >
+                <ThemedView 
+                  backgroundColor="card"
+                  borderRadius="md"
+                  padding="md"
+                  shadow="sm"
+                  style={styles.gameItem}
+                >
+                <ThemedText type="label" color="textSecondary" style={styles.gameDate}>
+                  {new Date(game.createdAt).toLocaleDateString()}
                 </ThemedText>
-              )}
-            </View>
-          ))}
-        </View>
-      ) : (
-        <View style={styles.emptyState}>
-          <ThemedText style={styles.emptyStateText}>
-            No games yet. Create your first game to get started!
-          </ThemedText>
-        </View>
-      )}
-    </ThemedView>
+                <ThemedText type="body" style={styles.gamePlayers}>
+                  {game.players.map(p => p.name).join(', ')}
+                </ThemedText>
+                {game.winner && (
+                  <ThemedText type="label" color="success" style={styles.gameWinner}>
+                    Winner: {game.winner}
+                  </ThemedText>
+                )}
+                </ThemedView>
+              </SlideInView>
+            ))}
+          </FadeInView>
+        ) : (
+          <View style={styles.emptyState}>
+            <ThemedText type="bodyLarge" color="textSecondary" style={styles.emptyStateText}>
+              No games yet. Create your first game to get started!
+            </ThemedText>
+          </View>
+        )}
+      </ResponsiveContainer>
+    </ThemedSafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: any, theme: any) => StyleSheet.create({
   container: {
     flex: 1,
-    padding: 20,
   },
   header: {
     alignItems: 'center',
-    marginTop: 60,
-    marginBottom: 40,
+    marginBottom: theme.responsive.getSpacing(theme.spacing.xl),
   },
   title: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    marginBottom: 8,
+    textAlign: 'center',
+    marginBottom: theme.responsive.getSpacing(theme.spacing.sm),
   },
   subtitle: {
-    fontSize: 16,
-    opacity: 0.7,
     textAlign: 'center',
+    maxWidth: 300,
   },
   mainActions: {
-    gap: 16,
-    marginBottom: 40,
-  },
-  button: {
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-    borderRadius: 12,
-    alignItems: 'center',
-    minHeight: 56,
-    justifyContent: 'center',
-  },
-  primaryButton: {
-    backgroundColor: '#1E3A8A',
-  },
-  secondaryButton: {
-    backgroundColor: 'transparent',
-    borderWidth: 2,
-    borderColor: '#1E3A8A',
-  },
-  primaryButtonText: {
-    color: 'white',
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  secondaryButtonText: {
-    color: '#1E3A8A',
-    fontSize: 16,
-    fontWeight: '500',
+    gap: theme.responsive.getSpacing(theme.spacing.md),
+    marginBottom: theme.responsive.getSpacing(theme.spacing.xl),
   },
   recentGames: {
     flex: 1,
   },
   sectionTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    marginBottom: 16,
+    marginBottom: theme.responsive.getSpacing(theme.spacing.md),
   },
   gameItem: {
-    padding: 16,
-    backgroundColor: '#F3F4F6',
-    borderRadius: 8,
-    marginBottom: 8,
+    marginBottom: theme.responsive.getSpacing(theme.spacing.sm),
   },
   gameDate: {
-    fontSize: 14,
-    fontWeight: '500',
-    marginBottom: 4,
+    marginBottom: theme.responsive.getSpacing(theme.spacing.xs),
   },
   gamePlayers: {
-    fontSize: 14,
-    opacity: 0.7,
-    marginBottom: 4,
+    marginBottom: theme.responsive.getSpacing(theme.spacing.xs),
   },
   gameWinner: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#10B981',
-  },
-  disabledButton: {
-    opacity: 0.6,
-  },
-  disabledText: {
-    opacity: 0.6,
+    // No additional styles needed, handled by ThemedText
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    gap: 16,
+    gap: theme.responsive.getSpacing(theme.spacing.md),
   },
   loadingText: {
-    fontSize: 16,
-    opacity: 0.7,
+    // No additional styles needed, handled by ThemedText
   },
   emptyState: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 40,
+    paddingHorizontal: theme.responsive.getSpacing(theme.spacing.xl),
   },
   emptyStateText: {
-    fontSize: 16,
-    opacity: 0.7,
     textAlign: 'center',
-    lineHeight: 24,
+    maxWidth: 300,
   },
 });

@@ -9,20 +9,59 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import * as Haptics from 'expo-haptics';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withTiming,
+  withSequence,
+  withDelay,
+  interpolate,
+  Extrapolation,
+} from 'react-native-reanimated';
 
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
+import { ThemedButton } from '@/components/ThemedButton';
+import { FadeInView, SlideInView, ScaleInView } from '@/components/ThemedAnimatedView';
+import { WinnerCelebration } from '@/components/CelebrationAnimation';
+import { LoadingAnimation } from '@/components/LoadingAnimation';
 import ScoreEntryModal from '@/components/ScoreEntryModal';
 import { useGame } from '@/src/context/GameContext';
-import { PlayerScore } from '@/src/types';
+import { useHaptics } from '@/src/services/HapticService';
+import { useTheme } from '@/src/context/ThemeContext';
+import { PlayerScore, Round } from '@/src/types';
 import { checkGameEnd, determineWinner } from '@/src/models/gameUtils';
 
 export default function GamePlayScreen() {
-  const { currentGame, addRound, endGame } = useGame();
+  const { currentGame, addRound, editRound, deleteRound, endGame } = useGame();
   const [showScoreEntry, setShowScoreEntry] = useState(false);
   const [showGameOver, setShowGameOver] = useState(false);
   const [winner, setWinner] = useState<string | null>(null);
+  const [editingRound, setEditingRound] = useState<{ id: string; scores: PlayerScore[] } | undefined>(undefined);
+  const [isLoading, setIsLoading] = useState(false);
+  
+  const { colors, theme } = useTheme();
+  const { roundComplete, gameWin, deleteAction, leaderboardUpdate } = useHaptics();
+  
+  // Animation values for leaderboard updates
+  const leaderboardScale = useSharedValue(1);
+  const screenOpacity = useSharedValue(0);
+  const screenTranslateY = useSharedValue(50);
+  const playerAnimations = currentGame?.players.reduce((acc, player) => {
+    acc[player.id] = {
+      scale: useSharedValue(1),
+      position: useSharedValue(0),
+      opacity: useSharedValue(1),
+    };
+    return acc;
+  }, {} as Record<string, { scale: Animated.SharedValue<number>; position: Animated.SharedValue<number>; opacity: Animated.SharedValue<number> }>) || {};
+
+  // Screen entrance animation
+  useEffect(() => {
+    screenOpacity.value = withTiming(1, { duration: 300 });
+    screenTranslateY.value = withSpring(0, { damping: 15, stiffness: 150 });
+  }, []);
 
   // Check for game end after each round
   useEffect(() => {
@@ -30,9 +69,52 @@ export default function GamePlayScreen() {
       const gameWinner = determineWinner(currentGame);
       setWinner(gameWinner?.name || null);
       setShowGameOver(true);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      gameWin();
     }
   }, [currentGame]);
+  
+  // Animate leaderboard updates
+  useEffect(() => {
+    if (currentGame) {
+      // Animate leaderboard scale
+      leaderboardScale.value = withSequence(
+        withSpring(1.02, { damping: 15, stiffness: 300 }),
+        withSpring(1, { damping: 15, stiffness: 300 })
+      );
+      
+      // Animate individual player positions with staggered timing
+      const sortedPlayers = [...currentGame.players].sort((a, b) => a.totalScore - b.totalScore);
+      sortedPlayers.forEach((player, index) => {
+        if (playerAnimations[player.id]) {
+          // Scale animation for score updates
+          playerAnimations[player.id].scale.value = withDelay(
+            index * 50,
+            withSequence(
+              withSpring(1.05, { damping: 12, stiffness: 250 }),
+              withSpring(1, { damping: 15, stiffness: 200 })
+            )
+          );
+          
+          // Position animation for ranking changes
+          playerAnimations[player.id].position.value = withDelay(
+            index * 30,
+            withSpring(index * 10, { damping: 20, stiffness: 100 })
+          );
+          
+          // Opacity pulse for emphasis
+          playerAnimations[player.id].opacity.value = withDelay(
+            index * 25,
+            withSequence(
+              withTiming(0.7, { duration: 150 }),
+              withTiming(1, { duration: 150 })
+            )
+          );
+        }
+      });
+      
+      leaderboardUpdate();
+    }
+  }, [currentGame?.rounds.length]);
 
   if (!currentGame) {
     // Redirect to home if no current game
@@ -44,14 +126,27 @@ export default function GamePlayScreen() {
     setShowScoreEntry(true);
   };
 
-  const handleScoreSubmit = (scores: PlayerScore[]) => {
-    addRound(scores);
-    setShowScoreEntry(false);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  const handleScoreSubmit = async (scores: PlayerScore[]) => {
+    setIsLoading(true);
+    
+    try {
+      if (editingRound) {
+        editRound(editingRound.id, scores);
+        setEditingRound(undefined);
+      } else {
+        addRound(scores);
+      }
+      
+      await roundComplete();
+      setShowScoreEntry(false);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleScoreCancel = () => {
     setShowScoreEntry(false);
+    setEditingRound(undefined);
   };
 
   const handleEndGame = () => {
@@ -84,13 +179,48 @@ export default function GamePlayScreen() {
     router.replace('/game-setup');
   };
 
+  const handleEditRound = (round: Round) => {
+    setEditingRound({ id: round.id, scores: round.scores });
+    setShowScoreEntry(true);
+  };
+
+  const handleDeleteRound = (round: Round) => {
+    Alert.alert(
+      'Delete Round',
+      `Are you sure you want to delete Round ${round.roundNumber}? This action cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            deleteRound(round.id);
+            await deleteAction();
+          },
+        },
+      ]
+    );
+  };
+
   const sortedPlayers = [...currentGame.players].sort((a, b) => a.totalScore - b.totalScore);
+
+  // Screen animation styles
+  const screenAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: screenOpacity.value,
+    transform: [{ translateY: screenTranslateY.value }],
+  }));
+
+  // Leaderboard animation styles
+  const leaderboardAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: leaderboardScale.value }],
+  }));
 
   return (
     <ThemedView style={styles.container}>
       <StatusBar style="auto" />
       
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+      <Animated.View style={[{ flex: 1 }, screenAnimatedStyle]}>
+        <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         {/* Game Info */}
         <View style={styles.gameInfo}>
           <ThemedText type="subtitle" style={styles.gameTitle}>
@@ -104,23 +234,34 @@ export default function GamePlayScreen() {
         </View>
 
         {/* Leaderboard */}
-        <View style={styles.leaderboard}>
+        <Animated.View style={[styles.leaderboard, leaderboardAnimatedStyle]}>
           <ThemedText type="subtitle" style={styles.sectionTitle}>
             Live Leaderboard
           </ThemedText>
           
           {sortedPlayers.map((player, index) => {
             const isLeader = index === 0;
-            const isCloseToTarget = currentGame.targetScore && 
-              player.totalScore >= (currentGame.targetScore * 0.8);
+            const isCloseToTarget = currentGame.targetScore ? 
+              player.totalScore >= (currentGame.targetScore * 0.8) : false;
+            
+            // Player animation styles
+            const playerAnimation = playerAnimations[player.id];
+            const playerAnimatedStyle = useAnimatedStyle(() => ({
+              transform: [
+                { scale: playerAnimation?.scale.value || 1 },
+                { translateY: playerAnimation?.position.value || 0 },
+              ],
+              opacity: playerAnimation?.opacity.value || 1,
+            }));
             
             return (
-              <View
+              <Animated.View
                 key={player.id}
                 style={[
                   styles.playerRow,
                   isLeader && styles.leaderRow,
                   isCloseToTarget && styles.warningRow,
+                  playerAnimatedStyle,
                 ]}
               >
                 <View style={styles.playerRank}>
@@ -169,10 +310,10 @@ export default function GamePlayScreen() {
                     </View>
                   )}
                 </View>
-              </View>
+              </Animated.View>
             );
           })}
-        </View>
+        </Animated.View>
 
         {/* Round History */}
         {currentGame.rounds.length > 0 && (
@@ -188,12 +329,30 @@ export default function GamePlayScreen() {
               return (
                 <View key={round.id} style={styles.roundItem}>
                   <View style={styles.roundHeader}>
-                    <ThemedText style={styles.roundTitle}>
-                      Round {roundNumber}
-                    </ThemedText>
-                    <ThemedText style={styles.roundTotal}>
-                      Total: {roundTotal}
-                    </ThemedText>
+                    <View style={styles.roundHeaderLeft}>
+                      <ThemedText style={styles.roundTitle}>
+                        Round {roundNumber}
+                      </ThemedText>
+                      <ThemedText style={styles.roundTotal}>
+                        Total: {roundTotal}
+                      </ThemedText>
+                    </View>
+                    <View style={styles.roundActions}>
+                      <TouchableOpacity
+                        style={styles.editButton}
+                        onPress={() => handleEditRound(round)}
+                        activeOpacity={0.7}
+                      >
+                        <ThemedText style={styles.editButtonText}>Edit</ThemedText>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.deleteButton}
+                        onPress={() => handleDeleteRound(round)}
+                        activeOpacity={0.7}
+                      >
+                        <ThemedText style={styles.deleteButtonText}>Delete</ThemedText>
+                      </TouchableOpacity>
+                    </View>
                   </View>
                   
                   <View style={styles.roundScores}>
@@ -229,7 +388,8 @@ export default function GamePlayScreen() {
             })}
           </View>
         )}
-      </ScrollView>
+        </ScrollView>
+      </Animated.View>
 
       {/* Action Buttons */}
       <View style={styles.footer}>
@@ -256,9 +416,34 @@ export default function GamePlayScreen() {
       <ScoreEntryModal
         visible={showScoreEntry}
         players={currentGame.players}
-        roundNumber={currentGame.rounds.length + 1}
+        roundNumber={editingRound ? 
+          (currentGame.rounds.find(r => r.id === editingRound.id)?.roundNumber || 1) : 
+          currentGame.rounds.length + 1
+        }
         onSubmit={handleScoreSubmit}
         onCancel={handleScoreCancel}
+        editingRound={editingRound}
+        loading={isLoading}
+      />
+
+      {/* Loading Overlay */}
+      {isLoading && (
+        <View style={styles.loadingOverlay}>
+          <LoadingAnimation
+            type="spinner"
+            size="large"
+            text="Updating scores..."
+          />
+        </View>
+      )}
+
+      {/* Winner Celebration */}
+      <WinnerCelebration
+        visible={showGameOver}
+        winnerName={winner || 'Unknown'}
+        onComplete={() => {
+          // Keep the celebration visible until user dismisses
+        }}
       />
 
       {/* Game Over Modal */}
@@ -471,6 +656,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 12,
   },
+  roundHeaderLeft: {
+    flex: 1,
+  },
+  roundActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
   roundTitle: {
     fontSize: 16,
     fontWeight: '600',
@@ -506,6 +698,28 @@ const styles = StyleSheet.create({
     fontSize: 12,
     opacity: 0.5,
     textAlign: 'right',
+  },
+  editButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: '#1E3A8A',
+    borderRadius: 6,
+  },
+  editButtonText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  deleteButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: '#EF4444',
+    borderRadius: 6,
+  },
+  deleteButtonText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: '600',
   },
   footer: {
     flexDirection: 'row',
@@ -652,5 +866,16 @@ const styles = StyleSheet.create({
     color: '#6B7280',
     fontSize: 16,
     fontWeight: '600',
+  },
+  loadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 999,
   },
 });
