@@ -23,7 +23,11 @@ import Animated, {
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { ThemedButton } from '@/components/ThemedButton';
-import { FadeInView, SlideInView, ScaleInView } from '@/components/ThemedAnimatedView';
+import {
+  FadeInView,
+  SlideInView,
+  ScaleInView,
+} from '@/components/ThemedAnimatedView';
 import { WinnerCelebration } from '@/components/CelebrationAnimation';
 import { LoadingAnimation } from '@/components/LoadingAnimation';
 import ScoreEntryModal from '@/components/ScoreEntryModal';
@@ -38,24 +42,38 @@ export default function GamePlayScreen() {
   const [showScoreEntry, setShowScoreEntry] = useState(false);
   const [showGameOver, setShowGameOver] = useState(false);
   const [winner, setWinner] = useState<string | null>(null);
-  const [editingRound, setEditingRound] = useState<{ id: string; scores: PlayerScore[] } | undefined>(undefined);
+  const [editingRound, setEditingRound] = useState<
+    { id: string; scores: PlayerScore[] } | undefined
+  >(undefined);
   const [isLoading, setIsLoading] = useState(false);
-  
+
   const { colors, theme } = useTheme();
-  const { roundComplete, gameWin, deleteAction, leaderboardUpdate } = useHaptics();
-  
+  const { roundComplete, gameWin, deleteAction, leaderboardUpdate } =
+    useHaptics();
+
   // Animation values for leaderboard updates
   const leaderboardScale = useSharedValue(1);
   const screenOpacity = useSharedValue(0);
   const screenTranslateY = useSharedValue(50);
-  const playerAnimations = currentGame?.players.reduce((acc, player) => {
-    acc[player.id] = {
-      scale: useSharedValue(1),
-      position: useSharedValue(0),
-      opacity: useSharedValue(1),
-    };
-    return acc;
-  }, {} as Record<string, { scale: Animated.SharedValue<number>; position: Animated.SharedValue<number>; opacity: Animated.SharedValue<number> }>) || {};
+  const playerAnimations =
+    currentGame?.players.reduce(
+      (acc, player) => {
+        acc[player.id] = {
+          scale: useSharedValue(1),
+          position: useSharedValue(0),
+          opacity: useSharedValue(1),
+        };
+        return acc;
+      },
+      {} as Record<
+        string,
+        {
+          scale: Animated.SharedValue<number>;
+          position: Animated.SharedValue<number>;
+          opacity: Animated.SharedValue<number>;
+        }
+      >
+    ) || {};
 
   // Screen entrance animation
   useEffect(() => {
@@ -72,7 +90,7 @@ export default function GamePlayScreen() {
       gameWin();
     }
   }, [currentGame]);
-  
+
   // Animate leaderboard updates
   useEffect(() => {
     if (currentGame) {
@@ -81,9 +99,11 @@ export default function GamePlayScreen() {
         withSpring(1.02, { damping: 15, stiffness: 300 }),
         withSpring(1, { damping: 15, stiffness: 300 })
       );
-      
+
       // Animate individual player positions with staggered timing
-      const sortedPlayers = [...currentGame.players].sort((a, b) => a.totalScore - b.totalScore);
+      const sortedPlayers = [...currentGame.players].sort(
+        (a, b) => a.totalScore - b.totalScore
+      );
       sortedPlayers.forEach((player, index) => {
         if (playerAnimations[player.id]) {
           // Scale animation for score updates
@@ -94,13 +114,13 @@ export default function GamePlayScreen() {
               withSpring(1, { damping: 15, stiffness: 200 })
             )
           );
-          
+
           // Position animation for ranking changes
           playerAnimations[player.id].position.value = withDelay(
             index * 30,
             withSpring(index * 10, { damping: 20, stiffness: 100 })
           );
-          
+
           // Opacity pulse for emphasis
           playerAnimations[player.id].opacity.value = withDelay(
             index * 25,
@@ -111,7 +131,7 @@ export default function GamePlayScreen() {
           );
         }
       });
-      
+
       leaderboardUpdate();
     }
   }, [currentGame?.rounds.length]);
@@ -128,7 +148,7 @@ export default function GamePlayScreen() {
 
   const handleScoreSubmit = async (scores: PlayerScore[]) => {
     setIsLoading(true);
-    
+
     try {
       if (editingRound) {
         editRound(editingRound.id, scores);
@@ -136,7 +156,7 @@ export default function GamePlayScreen() {
       } else {
         addRound(scores);
       }
-      
+
       await roundComplete();
       setShowScoreEntry(false);
     } finally {
@@ -150,21 +170,17 @@ export default function GamePlayScreen() {
   };
 
   const handleEndGame = () => {
-    Alert.alert(
-      'End Game',
-      'Are you sure you want to end this game?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'End Game',
-          style: 'destructive',
-          onPress: () => {
-            endGame();
-            router.replace('/');
-          },
+    Alert.alert('End Game', 'Are you sure you want to end this game?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'End Game',
+        style: 'destructive',
+        onPress: () => {
+          endGame();
+          router.replace('/');
         },
-      ]
-    );
+      },
+    ]);
   };
 
   const handleGameOverContinue = () => {
@@ -202,7 +218,9 @@ export default function GamePlayScreen() {
     );
   };
 
-  const sortedPlayers = [...currentGame.players].sort((a, b) => a.totalScore - b.totalScore);
+  const sortedPlayers = [...currentGame.players].sort(
+    (a, b) => a.totalScore - b.totalScore
+  );
 
   // Screen animation styles
   const screenAnimatedStyle = useAnimatedStyle(() => ({
@@ -218,176 +236,208 @@ export default function GamePlayScreen() {
   return (
     <ThemedView style={styles.container}>
       <StatusBar style="auto" />
-      
+
       <Animated.View style={[{ flex: 1 }, screenAnimatedStyle]}>
-        <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        {/* Game Info */}
-        <View style={styles.gameInfo}>
-          <ThemedText type="subtitle" style={styles.gameTitle}>
-            Round {currentGame.rounds.length + 1}
-          </ThemedText>
-          {currentGame.targetScore && (
-            <ThemedText style={styles.targetScore}>
-              Target: {currentGame.targetScore}
+        <ScrollView
+          style={styles.scrollView}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Game Info */}
+          <View style={styles.gameInfo}>
+            <ThemedText type="h2" style={styles.gameTitle}>
+              Round {currentGame.rounds.length + 1}
             </ThemedText>
-          )}
-        </View>
+            {currentGame.targetScore && (
+              <ThemedText style={styles.targetScore}>
+                Target: {currentGame.targetScore}
+              </ThemedText>
+            )}
+          </View>
 
-        {/* Leaderboard */}
-        <Animated.View style={[styles.leaderboard, leaderboardAnimatedStyle]}>
-          <ThemedText type="subtitle" style={styles.sectionTitle}>
-            Live Leaderboard
-          </ThemedText>
-          
-          {sortedPlayers.map((player, index) => {
-            const isLeader = index === 0;
-            const isCloseToTarget = currentGame.targetScore ? 
-              player.totalScore >= (currentGame.targetScore * 0.8) : false;
-            
-            // Player animation styles
-            const playerAnimation = playerAnimations[player.id];
-            const playerAnimatedStyle = useAnimatedStyle(() => ({
-              transform: [
-                { scale: playerAnimation?.scale.value || 1 },
-                { translateY: playerAnimation?.position.value || 0 },
-              ],
-              opacity: playerAnimation?.opacity.value || 1,
-            }));
-            
-            return (
-              <Animated.View
-                key={player.id}
-                style={[
-                  styles.playerRow,
-                  isLeader && styles.leaderRow,
-                  isCloseToTarget && styles.warningRow,
-                  playerAnimatedStyle,
-                ]}
-              >
-                <View style={styles.playerRank}>
-                  <ThemedText style={[
-                    styles.rankText,
-                    isLeader && styles.leaderRankText,
-                  ]}>
-                    #{index + 1}
-                  </ThemedText>
-                </View>
-                <View style={styles.playerInfo}>
-                  <ThemedText
-                    style={[
-                      styles.playerName,
-                      isLeader && styles.leaderName,
-                    ]}
-                  >
-                    {player.name}
-                    {isLeader && ' 👑'}
-                  </ThemedText>
-                  {currentGame.targetScore && (
-                    <ThemedText style={styles.targetProgress}>
-                      {Math.max(0, currentGame.targetScore - player.totalScore)} to target
-                    </ThemedText>
-                  )}
-                </View>
-                <View style={styles.playerScore}>
-                  <ThemedText
-                    style={[
-                      styles.scoreText,
-                      isLeader && styles.leaderScore,
-                      isCloseToTarget && styles.warningScore,
-                    ]}
-                  >
-                    {player.totalScore}
-                  </ThemedText>
-                  {currentGame.targetScore && (
-                    <View style={styles.progressBar}>
-                      <View 
-                        style={[
-                          styles.progressFill,
-                          { width: `${Math.min(100, (player.totalScore / currentGame.targetScore) * 100)}%` },
-                          isCloseToTarget && styles.warningProgress,
-                        ]} 
-                      />
-                    </View>
-                  )}
-                </View>
-              </Animated.View>
-            );
-          })}
-        </Animated.View>
-
-        {/* Round History */}
-        {currentGame.rounds.length > 0 && (
-          <View style={styles.roundHistory}>
-            <ThemedText type="subtitle" style={styles.sectionTitle}>
-              Round History ({currentGame.rounds.length} rounds)
+          {/* Leaderboard */}
+          <Animated.View style={[styles.leaderboard, leaderboardAnimatedStyle]}>
+            <ThemedText type="h3" style={styles.sectionTitle}>
+              Live Leaderboard
             </ThemedText>
-            
-            {currentGame.rounds.slice().reverse().map((round, index) => {
-              const roundNumber = currentGame.rounds.length - index;
-              const roundTotal = round.scores.reduce((sum, score) => sum + score.score, 0);
-              
+
+            {sortedPlayers.map((player, index) => {
+              const isLeader = index === 0;
+              const isCloseToTarget = currentGame.targetScore
+                ? player.totalScore >= currentGame.targetScore * 0.8
+                : false;
+
+              // Player animation styles
+              const playerAnimation = playerAnimations[player.id];
+              const playerAnimatedStyle = useAnimatedStyle(() => ({
+                transform: [
+                  { scale: playerAnimation?.scale.value || 1 },
+                  { translateY: playerAnimation?.position.value || 0 },
+                ],
+                opacity: playerAnimation?.opacity.value || 1,
+              }));
+
               return (
-                <View key={round.id} style={styles.roundItem}>
-                  <View style={styles.roundHeader}>
-                    <View style={styles.roundHeaderLeft}>
-                      <ThemedText style={styles.roundTitle}>
-                        Round {roundNumber}
-                      </ThemedText>
-                      <ThemedText style={styles.roundTotal}>
-                        Total: {roundTotal}
-                      </ThemedText>
-                    </View>
-                    <View style={styles.roundActions}>
-                      <TouchableOpacity
-                        style={styles.editButton}
-                        onPress={() => handleEditRound(round)}
-                        activeOpacity={0.7}
-                      >
-                        <ThemedText style={styles.editButtonText}>Edit</ThemedText>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={styles.deleteButton}
-                        onPress={() => handleDeleteRound(round)}
-                        activeOpacity={0.7}
-                      >
-                        <ThemedText style={styles.deleteButtonText}>Delete</ThemedText>
-                      </TouchableOpacity>
-                    </View>
+                <Animated.View
+                  key={player.id}
+                  style={[
+                    styles.playerRow,
+                    isLeader && styles.leaderRow,
+                    isCloseToTarget && styles.warningRow,
+                    playerAnimatedStyle,
+                  ]}
+                >
+                  <View style={styles.playerRank}>
+                    <ThemedText
+                      style={[
+                        styles.rankText,
+                        isLeader && styles.leaderRankText,
+                      ]}
+                    >
+                      #{index + 1}
+                    </ThemedText>
                   </View>
-                  
-                  <View style={styles.roundScores}>
-                    {round.scores
-                      .sort((a, b) => {
-                        const playerA = currentGame.players.find(p => p.id === a.playerId);
-                        const playerB = currentGame.players.find(p => p.id === b.playerId);
-                        return (playerA?.name || '').localeCompare(playerB?.name || '');
-                      })
-                      .map((score) => {
-                        const player = currentGame.players.find(p => p.id === score.playerId);
-                        return (
-                          <View key={score.playerId} style={styles.roundScore}>
-                            <ThemedText style={styles.roundPlayerName}>
-                              {player?.name}
-                            </ThemedText>
-                            <ThemedText style={[
-                              styles.roundScoreValue,
-                              score.isRummy && styles.rummyScore,
-                            ]}>
-                              {score.isRummy ? 'RUMMY (0)' : score.score}
-                            </ThemedText>
-                          </View>
-                        );
-                      })}
+                  <View style={styles.playerInfo}>
+                    <ThemedText
+                      style={[styles.playerName, isLeader && styles.leaderName]}
+                    >
+                      {player.name}
+                      {isLeader && ' 👑'}
+                    </ThemedText>
+                    {currentGame.targetScore && (
+                      <ThemedText style={styles.targetProgress}>
+                        {Math.max(
+                          0,
+                          currentGame.targetScore - player.totalScore
+                        )}{' '}
+                        to target
+                      </ThemedText>
+                    )}
                   </View>
-                  
-                  <ThemedText style={styles.roundTimestamp}>
-                    {new Date(round.timestamp).toLocaleTimeString()}
-                  </ThemedText>
-                </View>
+                  <View style={styles.playerScore}>
+                    <ThemedText
+                      style={[
+                        styles.scoreText,
+                        isLeader && styles.leaderScore,
+                        isCloseToTarget && styles.warningScore,
+                      ]}
+                    >
+                      {player.totalScore}
+                    </ThemedText>
+                    {currentGame.targetScore && (
+                      <View style={styles.progressBar}>
+                        <View
+                          style={[
+                            styles.progressFill,
+                            {
+                              width: `${Math.min(100, (player.totalScore / currentGame.targetScore) * 100)}%`,
+                            },
+                            isCloseToTarget && styles.warningProgress,
+                          ]}
+                        />
+                      </View>
+                    )}
+                  </View>
+                </Animated.View>
               );
             })}
-          </View>
-        )}
+          </Animated.View>
+
+          {/* Round History */}
+          {currentGame.rounds.length > 0 && (
+            <View style={styles.roundHistory}>
+              <ThemedText type="h3" style={styles.sectionTitle}>
+                Round History ({currentGame.rounds.length} rounds)
+              </ThemedText>
+
+              {currentGame.rounds
+                .slice()
+                .reverse()
+                .map((round, index) => {
+                  const roundNumber = currentGame.rounds.length - index;
+                  const roundTotal = round.scores.reduce(
+                    (sum, score) => sum + score.score,
+                    0
+                  );
+
+                  return (
+                    <View key={round.id} style={styles.roundItem}>
+                      <View style={styles.roundHeader}>
+                        <View style={styles.roundHeaderLeft}>
+                          <ThemedText style={styles.roundTitle}>
+                            Round {roundNumber}
+                          </ThemedText>
+                          <ThemedText style={styles.roundTotal}>
+                            Total: {roundTotal}
+                          </ThemedText>
+                        </View>
+                        <View style={styles.roundActions}>
+                          <TouchableOpacity
+                            style={styles.editButton}
+                            onPress={() => handleEditRound(round)}
+                            activeOpacity={0.7}
+                          >
+                            <ThemedText style={styles.editButtonText}>
+                              Edit
+                            </ThemedText>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={styles.deleteButton}
+                            onPress={() => handleDeleteRound(round)}
+                            activeOpacity={0.7}
+                          >
+                            <ThemedText style={styles.deleteButtonText}>
+                              Delete
+                            </ThemedText>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+
+                      <View style={styles.roundScores}>
+                        {round.scores
+                          .sort((a, b) => {
+                            const playerA = currentGame.players.find(
+                              p => p.id === a.playerId
+                            );
+                            const playerB = currentGame.players.find(
+                              p => p.id === b.playerId
+                            );
+                            return (playerA?.name || '').localeCompare(
+                              playerB?.name || ''
+                            );
+                          })
+                          .map(score => {
+                            const player = currentGame.players.find(
+                              p => p.id === score.playerId
+                            );
+                            return (
+                              <View
+                                key={score.playerId}
+                                style={styles.roundScore}
+                              >
+                                <ThemedText style={styles.roundPlayerName}>
+                                  {player?.name}
+                                </ThemedText>
+                                <ThemedText
+                                  style={[
+                                    styles.roundScoreValue,
+                                    score.isRummy && styles.rummyScore,
+                                  ]}
+                                >
+                                  {score.isRummy ? 'RUMMY (0)' : score.score}
+                                </ThemedText>
+                              </View>
+                            );
+                          })}
+                      </View>
+
+                      <ThemedText style={styles.roundTimestamp}>
+                        {new Date(round.timestamp).toLocaleTimeString()}
+                      </ThemedText>
+                    </View>
+                  );
+                })}
+            </View>
+          )}
         </ScrollView>
       </Animated.View>
 
@@ -397,18 +447,11 @@ export default function GamePlayScreen() {
           style={styles.addRoundButton}
           onPress={handleAddRound}
         >
-          <ThemedText style={styles.addRoundButtonText}>
-            Add Round
-          </ThemedText>
+          <ThemedText style={styles.addRoundButtonText}>Add Round</ThemedText>
         </TouchableOpacity>
-        
-        <TouchableOpacity
-          style={styles.endGameButton}
-          onPress={handleEndGame}
-        >
-          <ThemedText style={styles.endGameButtonText}>
-            End Game
-          </ThemedText>
+
+        <TouchableOpacity style={styles.endGameButton} onPress={handleEndGame}>
+          <ThemedText style={styles.endGameButtonText}>End Game</ThemedText>
         </TouchableOpacity>
       </View>
 
@@ -416,9 +459,11 @@ export default function GamePlayScreen() {
       <ScoreEntryModal
         visible={showScoreEntry}
         players={currentGame.players}
-        roundNumber={editingRound ? 
-          (currentGame.rounds.find(r => r.id === editingRound.id)?.roundNumber || 1) : 
-          currentGame.rounds.length + 1
+        roundNumber={
+          editingRound
+            ? currentGame.rounds.find(r => r.id === editingRound.id)
+                ?.roundNumber || 1
+            : currentGame.rounds.length + 1
         }
         onSubmit={handleScoreSubmit}
         onCancel={handleScoreCancel}
@@ -456,7 +501,9 @@ export default function GamePlayScreen() {
         <ThemedView style={styles.gameOverContainer}>
           <View style={styles.gameOverContent}>
             <View style={styles.celebrationHeader}>
-              <ThemedText style={styles.gameOverTitle}>🎉 Game Over! 🎉</ThemedText>
+              <ThemedText style={styles.gameOverTitle}>
+                🎉 Game Over! 🎉
+              </ThemedText>
               {winner && (
                 <ThemedText style={styles.winnerText}>
                   {winner} Wins!
@@ -468,10 +515,10 @@ export default function GamePlayScreen() {
             </View>
 
             <View style={styles.finalLeaderboard}>
-              <ThemedText type="subtitle" style={styles.finalLeaderboardTitle}>
+              <ThemedText type="h3" style={styles.finalLeaderboardTitle}>
                 Final Standings
               </ThemedText>
-              
+
               {sortedPlayers.map((player, index) => (
                 <View
                   key={player.id}
@@ -481,27 +528,33 @@ export default function GamePlayScreen() {
                   ]}
                 >
                   <View style={styles.finalPlayerRank}>
-                    <ThemedText style={[
-                      styles.finalRankText,
-                      index === 0 && styles.finalWinnerText,
-                    ]}>
+                    <ThemedText
+                      style={[
+                        styles.finalRankText,
+                        index === 0 && styles.finalWinnerText,
+                      ]}
+                    >
                       #{index + 1}
                     </ThemedText>
                   </View>
                   <View style={styles.finalPlayerInfo}>
-                    <ThemedText style={[
-                      styles.finalPlayerName,
-                      index === 0 && styles.finalWinnerText,
-                    ]}>
+                    <ThemedText
+                      style={[
+                        styles.finalPlayerName,
+                        index === 0 && styles.finalWinnerText,
+                      ]}
+                    >
                       {player.name}
                       {index === 0 && ' 👑'}
                     </ThemedText>
                   </View>
                   <View style={styles.finalPlayerScore}>
-                    <ThemedText style={[
-                      styles.finalScoreText,
-                      index === 0 && styles.finalWinnerText,
-                    ]}>
+                    <ThemedText
+                      style={[
+                        styles.finalScoreText,
+                        index === 0 && styles.finalWinnerText,
+                      ]}
+                    >
                       {player.totalScore}
                     </ThemedText>
                   </View>
@@ -518,7 +571,7 @@ export default function GamePlayScreen() {
                   New Game
                 </ThemedText>
               </TouchableOpacity>
-              
+
               <TouchableOpacity
                 style={styles.homeButton}
                 onPress={handleGameOverContinue}

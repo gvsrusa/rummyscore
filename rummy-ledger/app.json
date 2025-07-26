@@ -73,18 +73,7 @@
           "backgroundColor": "#ffffff"
         }
       ],
-      [
-        "expo-build-properties",
-        {
-          "ios": {
-            "newArchEnabled": true
-          },
-          "android": {
-            "newArchEnabled": true,
-            "minSdkVersion": 23
-          }
-        }
-      ]
+
     ],
     "experiments": {
       "typedRoutes": true

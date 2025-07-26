@@ -47,16 +47,16 @@ export class ErrorBoundary extends Component<Props, State> {
 
       return (
         <ThemedView style={styles.container}>
-          <ThemedText type="title" style={styles.title}>
+          <ThemedText type="h1" style={styles.title}>
             Oops! Something went wrong
           </ThemedText>
           <ThemedText style={styles.message}>
-            We're sorry, but something unexpected happened. Please try again.
+            We&apos;re sorry, but something unexpected happened. Please try again.
           </ThemedText>
           
           {__DEV__ && this.state.error && (
             <View style={styles.errorDetails}>
-              <ThemedText type="subtitle" style={styles.errorTitle}>
+              <ThemedText type="h2" style={styles.errorTitle}>
                 Error Details (Development Only):
               </ThemedText>
               <Text style={styles.errorText}>
